@@ -49,9 +49,9 @@
             myName = input.value.trim();
             if(!myName) { alert('請輸入名字！'); return; }
 
-            // 檢查遊戲是否已經開始（若管理者已經出過題，禁止中途加入）
+            // 嚴格檢查遊戲是否已經開始
             const gameState = JSON.parse(localStorage.getItem('cyber_game_state') || '{}');
-            if(gameState.activeQuestion !== undefined && gameState.activeQuestion >= 0) {
+            if(gameState.gameStarted === true || (gameState.activeQuestion !== undefined && gameState.activeQuestion >= 0)) {
                 alert('遊戲已經開始，本場次無法再加入！');
                 return;
             }
@@ -61,33 +61,38 @@
                 alert('此名字已被使用！');
                 return;
             }
+
             players.push({ name: myName, alive: true, score: 0 });
             localStorage.setItem('cyber_players', JSON.stringify(players));
 
             document.getElementById('login-card').classList.add('hidden');
             document.getElementById('game-card').classList.remove('hidden');
-            document.getElementById('status-msg').innerText = `歡迎 ${myName}！請等待主持人出題。`;
+            document.getElementById('status-msg').innerText = `已成功登入，等待主持人發布第一題...`;
 
-            setInterval(syncGameState, 1000);
+            setInterval(syncGameState, 500);
         }
 
         function syncGameState() {
+            if(!myName) return;
+
             const gameState = JSON.parse(localStorage.getItem('cyber_game_state') || '{}');
             const players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
             const me = players.find(p => p.name === myName);
 
             if(!me) return;
 
+            // 如果自己被淘汰了（無論是答錯或逾時）
             if(!me.alive) {
+                if(playerTimerInterval) clearInterval(playerTimerInterval);
                 document.getElementById('status-msg').innerHTML = "<span class='text-red-400 text-xl font-bold'>❌ 您已被淘汰！</span><br><span class='text-xs text-slate-400 mt-2 block'>感謝您的參與，請觀看大螢幕結果</span>";
                 document.getElementById('question-box').classList.add('hidden');
                 return;
             }
 
-            // 新題目發布
+            // 偵測新題目
             if(gameState.activeQuestion !== undefined && gameState.activeQuestion !== currentQId) {
                 currentQId = gameState.activeQuestion;
-                answeredThisRound = false; // 重置本題作答狀態
+                answeredThisRound = false; 
                 renderQuestion(gameState.questionData);
             }
         }
@@ -108,7 +113,7 @@
                 optContainer.appendChild(btn);
             });
 
-            // 啟動個人作答 10 秒倒數計時器
+            // 啟動 10 秒倒數
             let timeLeft = 10;
             document.getElementById('player-timer').innerText = timeLeft + 's';
             if(playerTimerInterval) clearInterval(playerTimerInterval);
@@ -119,8 +124,7 @@
                 
                 if(timeLeft <= 0) {
                     clearInterval(playerTimerInterval);
-                    // 時間到若還沒回答，判定逾時淘汰
-                    checkTimeout(qData.answer);
+                    checkTimeout();
                 }
             }, 1000);
         }
@@ -145,15 +149,16 @@
             document.getElementById('question-box').classList.add('hidden');
         }
 
-        function checkTimeout(correctIdx) {
-            if(answeredThisRound) return; // 已經在時間內回答過了
+        function checkTimeout() {
+            if(answeredThisRound) return; 
             answeredThisRound = true;
+            if(playerTimerInterval) clearInterval(playerTimerInterval);
 
             let players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
             let me = players.find(p => p.name === myName);
             if(!me || !me.alive) return;
 
-            // 逾時未作答直接淘汰
+            // 強制標記為淘汰
             me.alive = false;
             localStorage.setItem('cyber_players', JSON.stringify(players));
 
