@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資安百萬大挑戰 - 參加者端</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-4 flex flex-col justify-between">
+    <div class="max-w-md mx-auto w-full">
+        <header class="text-center my-6">
+            <h1 class="text-2xl font-bold text-yellow-400">🏆 資安百萬大挑戰</h1>
+            <p class="text-xs text-slate-400 mt-1">參加者作答端</p>
+        </header>
+
+        <!-- 登入區 -->
+        <div id="login-card" class="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
+            <h2 class="text-lg font-semibold mb-3 text-cyan-400 text-center">請輸入您的名字</h2>
+            <input type="text" id="player-name" placeholder="例如：資安小達人" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg mb-4 focus:outline-none focus:border-cyan-500 text-center text-lg">
+            <button onclick="registerPlayer()" class="w-full py-3 bg-cyan-600 hover:bg-cyan-500 font-bold rounded-lg transition">加入挑戰</button>
+        </div>
+
+        <!-- 等待與作答區 -->
+        <div id="game-card" class="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 hidden text-center">
+            <div id="status-msg" class="text-lg font-bold text-slate-300 mb-4">等待主持人發布題目中...</div>
+            <div id="question-box" class="hidden text-left space-y-3">
+                <h3 id="q-title" class="text-base font-bold text-yellow-300 mb-3"></h3>
+                <div id="q-options" class="flex flex-col gap-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center text-xs text-slate-500 py-4">
+        殘酷生存淘汰賽｜答錯即淘汰
+    </footer>
+
+    <script>
+        let myName = "";
+        let currentQId = -1;
+
+        function registerPlayer() {
+            const input = document.getElementById('player-name');
+            myName = input.value.trim();
+            if(!myName) { alert('請輸入名字！'); return; }
+
+            // 儲存至 LocalStorage 以便與管理者模擬同機測試或多視窗互動
+            let players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
+            if(players.some(p => p.name === myName)) {
+                alert('此名字已被使用！');
+                return;
+            }
+            players.push({ name: myName, alive: true, score: 0 });
+            localStorage.setItem('cyber_players', JSON.stringify(players));
+
+            document.getElementById('login-card').classList.add('hidden');
+            document.getElementById('game-card').classList.remove('hidden');
+            document.getElementById('status-msg').innerText = `歡迎 ${myName}！請隨時注意主持人出題。`;
+
+            // 定期檢查遊戲狀態
+            setInterval(syncGameState, 1000);
+        }
+
+        function syncGameState() {
+            const gameState = JSON.parse(localStorage.getItem('cyber_game_state') || '{}');
+            const players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
+            const me = players.find(p => p.name === myName);
+
+            if(me && !me.alive) {
+                document.getElementById('status-msg').innerHTML = "<span class='text-red-400 text-xl'>❌ 您已被淘汰！</span><br><span class='text-xs text-slate-400 mt-2 block'>感謝您的參與，請觀看大螢幕結果</span>";
+                document.getElementById('question-box').classList.add('hidden');
+                return;
+            }
+
+            if(gameState.activeQuestion !== undefined && gameState.activeQuestion !== currentQId) {
+                currentQId = gameState.activeQuestion;
+                renderQuestion(gameState.questionData);
+            }
+        }
+
+        function renderQuestion(qData) {
+            document.getElementById('status-msg').innerText = "請在限時內作答：";
+            const qBox = document.getElementById('question-box');
+            qBox.classList.remove('hidden');
+            document.getElementById('q-title').innerText = qData.q;
+            
+            const optContainer = document.getElementById('q-options');
+            optContainer.innerHTML = '';
+            qData.options.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = "p-3 bg-slate-700 hover:bg-cyan-600 text-left rounded-lg transition font-medium text-sm";
+                btn.innerText = opt;
+                btn.onclick = () => submitAnswer(idx, qData.answer);
+                optContainer.appendChild(btn);
+            });
+        }
+
+        function submitAnswer(selectedIdx, correctIdx) {
+            let players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
+            let me = players.find(p => p.name === myName);
+            if(!me || !me.alive) return;
+
+            if(selectedIdx === correctIdx) {
+                me.score += 10;
+                document.getElementById('status-msg').innerHTML = "<span class='text-green-400 font-bold'>✅ 回答正確！等待下一題...</span>";
+            } else {
+                me.alive = false;
+                document.getElementById('status-msg').innerHTML = "<span class='text-red-400 font-bold'>❌ 回答錯誤！您已被淘汰</span>";
+            }
+            localStorage.setItem('cyber_players', JSON.stringify(players));
+            document.getElementById('question-box').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
