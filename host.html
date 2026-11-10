@@ -48,7 +48,7 @@
 
         <!-- 結算與獎金分配區 (預設隱藏) -->
         <div id="host-podium" class="hidden bg-slate-900 p-8 rounded-xl border border-yellow-500 shadow-xl text-center">
-            <h2 class="text-3xl font-bold text-yellow-400 mb-2">🎉 競賽圓滿結束！最終優勝與獎金分配</h2>
+            <h2 id="podium-title" class="text-3xl font-bold text-yellow-400 mb-2">🎉 競賽圓滿結束！最終優勝與獎金分配</h2>
             <p class="text-slate-300 mb-6">總獎金 NT$ 100,000 依表現比例分配</p>
             <div id="host-ranking-list" class="space-y-4 max-w-2xl mx-auto text-left"></div>
         </div>
@@ -112,17 +112,27 @@
         }
 
         function nextQuestion() {
+            // 檢查是否所有人都已經陣亡 (存活人數為 0 且已經開始過遊戲)
+            const players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
+            const aliveCount = players.filter(p => p.alive).length;
+            
+            if(currentQIdx >= 0 && aliveCount === 0) {
+                showFinalPodium("⚠️ 全員陣亡！提前結束競賽並結算排名");
+                return;
+            }
+
             currentQIdx++;
             if(currentQIdx >= questions.length) {
-                showFinalPodium();
+                showFinalPodium("🎉 所有題目已結束，正在結算最終排名！");
                 return;
             }
 
             const qData = questions[currentQIdx];
             document.getElementById('host-q-display').innerHTML = `<strong class="text-white">第 ${currentQIdx+1} 題：</strong> ${qData.q}<br><ul class="mt-2 text-sm text-slate-400 space-y-1">${qData.options.map((o, i) => `<li class="${i === qData.answer ? 'text-green-400 font-bold' : ''}">${o}</li>`).join('')}</ul>`;
 
-            // 同步給參加者（此時 activeQuestion 確定 >= 0，參加者端將全面鎖定禁止新登入）
+            // 設定 gameStarted: true 徹底鎖定新進人員
             localStorage.setItem('cyber_game_state', JSON.stringify({
+                gameStarted: true,
                 activeQuestion: currentQIdx,
                 questionData: qData
             }));
@@ -138,57 +148,3 @@
             timer = setInterval(() => {
                 timeLeft--;
                 document.getElementById('countdown').innerText = timeLeft;
-                if(timeLeft <= 0) {
-                    clearInterval(timer);
-                    document.getElementById('timer-display').classList.add('hidden');
-                    document.getElementById('next-q-btn').disabled = false;
-                    document.getElementById('next-q-btn').classList.remove('opacity-50', 'cursor-not-allowed');
-                }
-            }, 1000);
-        }
-
-        function showFinalPodium() {
-            document.getElementById('host-q-display').innerHTML = "<span class='text-green-400 font-bold'>🎉 所有題目已結束，正在結算最終排名！</span>";
-            document.getElementById('next-q-btn').classList.add('hidden');
-            document.getElementById('host-podium').classList.remove('hidden');
-            
-            let players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
-            players.sort((a, b) => b.score - a.score);
-            const top3 = players.slice(0, 3);
-
-            const rankingList = document.getElementById('host-ranking-list');
-            rankingList.innerHTML = '';
-
-            const prizePool = 100000;
-            const ratios = [0.5, 0.3, 0.2]; // 5萬, 3萬, 2萬
-            const medals = ["🥇 冠軍", "🥈 亞軍", "🥉 季軍"];
-
-            top3.forEach((p, idx) => {
-                const amount = prizePool * ratios[idx];
-                const div = document.createElement('div');
-                div.className = "flex justify-between items-center p-4 bg-slate-950 rounded-lg border border-slate-800";
-                div.innerHTML = `
-                    <div>
-                        <span class="text-xl font-bold text-yellow-400 mr-3">${medals[idx]}</span>
-                        <span class="text-lg font-semibold">${p.name}</span>
-                        <span class="text-xs text-slate-400 block mt-1">總得分：${p.score} 分</span>
-                    </div>
-                    <div class="text-right">
-                        <span class="text-2xl font-bold text-green-400">NT$ ${amount.toLocaleString()}</span>
-                        <span class="text-xs text-slate-400 block">獎金佔比 ${(ratios[idx]*100)}%</span>
-                    </div>
-                `;
-                rankingList.appendChild(div);
-            });
-        }
-
-        function resetGame() {
-            if(confirm('確定要重置所有參加者與遊戲進度嗎？')) {
-                localStorage.removeItem('cyber_players');
-                localStorage.removeItem('cyber_game_state');
-                location.reload();
-            }
-        }
-    </script>
-</body>
-</html>
