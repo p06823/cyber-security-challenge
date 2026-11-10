@@ -24,6 +24,10 @@
         <div id="game-card" class="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 hidden text-center">
             <div id="status-msg" class="text-lg font-bold text-slate-300 mb-4">等待主持人發布題目中...</div>
             <div id="question-box" class="hidden text-left space-y-3">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs text-red-400 font-bold">限時作答中</span>
+                    <span id="player-timer" class="text-xl font-bold text-red-400">10s</span>
+                </div>
                 <h3 id="q-title" class="text-base font-bold text-yellow-300 mb-3"></h3>
                 <div id="q-options" class="flex flex-col gap-2"></div>
             </div>
@@ -31,19 +35,27 @@
     </div>
 
     <footer class="text-center text-xs text-slate-500 py-4">
-        殘酷生存淘汰賽｜答錯即淘汰
+        殘酷生存淘汰賽｜逾時或答錯即淘汰
     </footer>
 
     <script>
         let myName = "";
         let currentQId = -1;
+        let answeredThisRound = false;
+        let playerTimerInterval = null;
 
         function registerPlayer() {
             const input = document.getElementById('player-name');
             myName = input.value.trim();
             if(!myName) { alert('請輸入名字！'); return; }
 
-            // 儲存至 LocalStorage 以便與管理者模擬同機測試或多視窗互動
+            // 檢查遊戲是否已經開始（若管理者已經出過題，禁止中途加入）
+            const gameState = JSON.parse(localStorage.getItem('cyber_game_state') || '{}');
+            if(gameState.activeQuestion !== undefined && gameState.activeQuestion >= 0) {
+                alert('遊戲已經開始，本場次無法再加入！');
+                return;
+            }
+
             let players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
             if(players.some(p => p.name === myName)) {
                 alert('此名字已被使用！');
@@ -54,9 +66,8 @@
 
             document.getElementById('login-card').classList.add('hidden');
             document.getElementById('game-card').classList.remove('hidden');
-            document.getElementById('status-msg').innerText = `歡迎 ${myName}！請隨時注意主持人出題。`;
+            document.getElementById('status-msg').innerText = `歡迎 ${myName}！請等待主持人出題。`;
 
-            // 定期檢查遊戲狀態
             setInterval(syncGameState, 1000);
         }
 
@@ -65,20 +76,24 @@
             const players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
             const me = players.find(p => p.name === myName);
 
-            if(me && !me.alive) {
-                document.getElementById('status-msg').innerHTML = "<span class='text-red-400 text-xl'>❌ 您已被淘汰！</span><br><span class='text-xs text-slate-400 mt-2 block'>感謝您的參與，請觀看大螢幕結果</span>";
+            if(!me) return;
+
+            if(!me.alive) {
+                document.getElementById('status-msg').innerHTML = "<span class='text-red-400 text-xl font-bold'>❌ 您已被淘汰！</span><br><span class='text-xs text-slate-400 mt-2 block'>感謝您的參與，請觀看大螢幕結果</span>";
                 document.getElementById('question-box').classList.add('hidden');
                 return;
             }
 
+            // 新題目發布
             if(gameState.activeQuestion !== undefined && gameState.activeQuestion !== currentQId) {
                 currentQId = gameState.activeQuestion;
+                answeredThisRound = false; // 重置本題作答狀態
                 renderQuestion(gameState.questionData);
             }
         }
 
         function renderQuestion(qData) {
-            document.getElementById('status-msg').innerText = "請在限時內作答：";
+            document.getElementById('status-msg').innerText = "請在限時內選擇答案：";
             const qBox = document.getElementById('question-box');
             qBox.classList.remove('hidden');
             document.getElementById('q-title').innerText = qData.q;
@@ -92,21 +107,57 @@
                 btn.onclick = () => submitAnswer(idx, qData.answer);
                 optContainer.appendChild(btn);
             });
+
+            // 啟動個人作答 10 秒倒數計時器
+            let timeLeft = 10;
+            document.getElementById('player-timer').innerText = timeLeft + 's';
+            if(playerTimerInterval) clearInterval(playerTimerInterval);
+
+            playerTimerInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('player-timer').innerText = timeLeft + 's';
+                
+                if(timeLeft <= 0) {
+                    clearInterval(playerTimerInterval);
+                    // 時間到若還沒回答，判定逾時淘汰
+                    checkTimeout(qData.answer);
+                }
+            }, 1000);
         }
 
         function submitAnswer(selectedIdx, correctIdx) {
+            if(answeredThisRound) return;
+            answeredThisRound = true;
+            if(playerTimerInterval) clearInterval(playerTimerInterval);
+
             let players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
             let me = players.find(p => p.name === myName);
             if(!me || !me.alive) return;
 
             if(selectedIdx === correctIdx) {
                 me.score += 10;
-                document.getElementById('status-msg').innerHTML = "<span class='text-green-400 font-bold'>✅ 回答正確！等待下一題...</span>";
+                document.getElementById('status-msg').innerHTML = "<span class='text-green-400 font-bold text-lg'>✅ 回答正確！等待下一題...</span>";
             } else {
                 me.alive = false;
-                document.getElementById('status-msg').innerHTML = "<span class='text-red-400 font-bold'>❌ 回答錯誤！您已被淘汰</span>";
+                document.getElementById('status-msg').innerHTML = "<span class='text-red-400 font-bold text-lg'>❌ 回答錯誤！您已被淘汰</span>";
             }
             localStorage.setItem('cyber_players', JSON.stringify(players));
+            document.getElementById('question-box').classList.add('hidden');
+        }
+
+        function checkTimeout(correctIdx) {
+            if(answeredThisRound) return; // 已經在時間內回答過了
+            answeredThisRound = true;
+
+            let players = JSON.parse(localStorage.getItem('cyber_players') || '[]');
+            let me = players.find(p => p.name === myName);
+            if(!me || !me.alive) return;
+
+            // 逾時未作答直接淘汰
+            me.alive = false;
+            localStorage.setItem('cyber_players', JSON.stringify(players));
+
+            document.getElementById('status-msg').innerHTML = "<span class='text-red-400 font-bold text-lg'>⏰ 時間到！未在時限內作答，您已被淘汰</span>";
             document.getElementById('question-box').classList.add('hidden');
         }
     </script>
